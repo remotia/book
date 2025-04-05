@@ -1,0 +1,6 @@
+[book]
+authors = ["aegroto"]
+language = "en"
+multilingual = false
+src = "src"
+title = "The Remotia book"
