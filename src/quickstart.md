@@ -1,12 +1,11 @@
-# Basic usage
+# Quickstart
 
-Currently, remotia can be added to the project as a git dependency:
+remotia's [crate](https://crates.io/crates/remotia) can be added to the project as any dependency: 
 
 ```toml
 [dependencies.remotia]
-git = "https://github.com/remotia/remotia"
-branch = "main"
-default-features = false
+version = "0.1.0" # Check crates.io to know the last released version
+default-features = false # It is recommended to disable all features by default and enable only the needed ones
 features = ["buffers", "profilation", "transmission"]
 ```
 
