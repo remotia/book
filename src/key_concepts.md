@@ -1,62 +1,200 @@
 # Key concepts
 
-This section introduces the fundamental concepts of the framework, designed to facilitate the creation of video streaming processing pipelines.
-The content of this page is mostly a resume of the chapter *3.1 Basic Concepts* of the [original paper](https://link.springer.com/article/10.1007/s11042-025-20798-y), updated in line with the latest version of the framework.
-These concepts form the foundation of the framework, providing a modular and flexible system for designing and implementing video streaming architectures. 
+Remotia is built around four abstractions that compose into streaming pipelines. This page defines each one and shows the Rust APIs you implement and use.
+
+```
+Pipeline
+ ┌──────────────────────────┐       ┌──────────────────────────┐
+ │ Component A               │       │ Component B               │
+ │  ┌──────────┐ ┌─────────┐│  ch   │  ┌──────────┐ ┌─────────┐│
+ │  │Processor 1│→│Processor 2││──────▶│  │Processor 3│→│Processor 4││
+ │  └──────────┘ └─────────┘│       │  └──────────┘ └─────────┘│
+ └──────────────────────────┘       └──────────────────────────┘
+```
+
+- A **DTO** (Data Transfer Object) carries frame data and metadata through the pipeline.
+- A **processor** performs one atomic operation on a DTO.
+- A **component** groups processors into a single async task, connected to neighbors by channels.
+- A **pipeline** links components into a directed chain; multiple pipelines are connected by **switches**.
+
+---
 
 ## Data Transfer Object (DTO)
 
 <img style="display:block; margin: auto" src="./figures/frame_dto.svg">
 
-The framework uses a **Data Transfer Object (DTO)** to handle the transfer of information between components. 
-This object is referred to as Frame DTO or simply DTO.
-It usually contains pointers to data buffers and statistical values related to the frame(s) being processed. 
+The DTO is the data structure that flows through the pipeline. It typically holds frame buffers and per-frame statistics. You define your own DTO type and implement the traits that the processors in your pipeline require.
 
-The structure of the DTO is intentionally kept generic.
-Each application should define its own DTO types adapted to its specific use cases.
-A DTO implements the necessary interfaces [traits](https://doc.rust-lang.org/book/ch10-02-traits.html) to interact with processors. 
-In most cases, the DTOs implement interfaces that are part of the standard library
-This paradigm ensures that data are decoupled from the logic code, which remains reusable.
-For more complex scenarios, custom modules can define their own interfaces that the DTO must implement if the module is used in the pipeline. 
+### Core trait: `FrameProcessor` input
+
+Every processor operates on a generic type `F`. Your DTO is that type `F`. The framework does not mandate a specific struct — you define one adapted to your use case.
+
+### Trait: `FrameProperties<K, V>`
+
+Used by switches that read or write routing keys on the DTO (e.g. `PoolingSwitch`, `DepoolingSwitch`).
+
+```rust
+pub trait FrameProperties<K, V> {
+    fn set(&mut self, key: K, value: V);
+    fn get(&self, key: &K) -> Option<V>;
+}
+```
+
+### Trait: `FrameError<E>`
+
+Used by `OnErrorSwitch` to inspect error state on the DTO.
+
+```rust
+pub trait FrameError<E> {
+    fn report_error(&mut self, error: E);
+    fn get_error(&self) -> Option<E>;
+}
+```
+
+### Other available traits
+
+| Trait | Purpose | Used by |
+|---|---|---|
+| `PullableFrameProperties<K, V>` | Push/pull semantics for properties | Advanced routing |
+| `OptionalFrameData<D>` | Access optional embedded data | Buffer utilities |
+| `BorrowFrameProperties<K, V>` | Get a reference to a property value | Read-only inspection |
+| `BorrowMutFrameProperties<K, V>` | Get a mutable reference to a property value | In-place mutation |
+
+### Minimal DTO example
+
+```rust
+use remotia::traits::{FrameProperties, FrameError};
+
+#[derive(Debug, Default)]
+struct MyDto {
+    buffer: Vec<u8>,
+    frame_id: u64,
+    error: Option<String>,
+}
+
+impl FrameProperties<String, u64> for MyDto {
+    fn set(&mut self, key: String, value: u64) {
+        if key == "frame_id" { self.frame_id = value; }
+    }
+    fn get(&self, key: &String) -> Option<u64> {
+        if key == "frame_id" { Some(self.frame_id) } else { None }
+    }
+}
+
+impl FrameError<String> for MyDto {
+    fn report_error(&mut self, error: String) { self.error = Some(error); }
+    fn get_error(&self) -> Option<String> { self.error.clone() }
+}
+```
+
+Custom processor modules may define additional traits. Your DTO must implement them if you use those modules in your pipeline.
+
+---
 
 ## Processors
+
 <img style="display:block; margin: auto; width: 30em" src="./figures/processor.svg">
 
-A **processor** represents a single unit of operations applied to a DTO. 
-Its purpose is to simplify the process of modifying or analyzing atomic steps of streaming pipelines. 
-During its lifecycle, a DTO is passed through a sequence of processors, each of which may read or modify the data.
+A processor is a single unit of work applied to a DTO. The core trait is:
 
-Each processor takes one DTO as input and produces one or zero DTOs as output. 
-The output DTO can either be the modified input DTO or a newly allocated one. 
-If an output DTO is produced, it is passed to the next processor in the sequence. 
-This flow is analogous to the layers in a neural network, where each processor performs a specific task.
+```rust
+#[async_trait]
+pub trait FrameProcessor<F> {
+    async fn process(&mut self, frame_data: F) -> Option<F>;
+}
+```
 
-Processors have full [ownership](https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html) of the Frame DTO once they receive it. 
-If a processor does not produce an output, it signals that the current processor must hold the DTO outside the current execution cycle or that the processing should be transferred to a different pipeline or suspended.
+**Return contract:**
+- `Some(dto)` — the DTO is passed to the next processor in the component.
+- `None` — the DTO is consumed. The pipeline interprets this as "this frame is done here" — it may have been redirected to another pipeline (by a switch), stored, or dropped.
+
+Processors have full [ownership](https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html) of the DTO while processing it. This avoids borrowing conflicts and makes the data flow explicit.
+
+See the [Processors](./processors.md) page for the catalog of built-in processor types.
+
+---
 
 ## Components
 
 <img style="display:block; margin: auto" src="./figures/component.svg">
 
-A **component** is the context in which a sequence of processors is executed. 
-Each component runs asynchronously with the rest of the system, processes the data it receives, and sends the resulting data to another connected component. 
-Components can also periodically allocate an empty DTO, fill it with initial data, and send it through the architecture.
+A **component** groups an ordered sequence of processors into a single async task (a [Tokio task](https://tokio.rs/tokio/tutorial/spawning#tasks)). Each component:
 
-In practical terms, a component corresponds to a thread executing a sequence of processors. 
-The framework uses a pattern known as [green threads](https://tokio.rs/tokio/tutorial/spawning#tasks), reducing the overhead of asynchronous executions. 
-Grouping processors into components allows to leverage the multi-threading capabilities of modern CPUs. 
-This design helps modifying the load distribution with minimal modifications to the code.
+1. Receives a DTO from an input channel (or allocates one itself).
+2. Passes it through its processors sequentially.
+3. Sends the resulting DTO (if any) to the next component via an output channel.
+
+Components are the unit of concurrency. By grouping processors into different components, you control which work shares a task and which runs in parallel. The framework uses unbounded `mpsc` channels to connect adjacent components within a pipeline.
+
+### Builder API
+
+```rust
+Component::new()
+    .append(processor_a)
+    .append(processor_b)
+    .tag("encoder")
+```
+
+Or, for a single-processor component:
+
+```rust
+Component::singleton(processor)
+```
+
+---
 
 ## Pipelines
 
 <img style="display:block; margin: auto" src="./figures/pipeline.svg">
 
-A **pipeline** is a sequentially connected set of components that share a common scope and can work asynchronously. 
-Pipelines are used to link different components that process frames in distinct ways, such as handling errors or profiling.
+A **pipeline** is a chain of components connected by channels. Components within a pipeline run concurrently (each is a separate Tokio task), while processors within a component run sequentially.
 
-While a simple architecture may consist of a single pipeline, more complex systems often require multiple pipelines to handle different processing contexts. 
-For example, a pipeline might be dedicated to logging or debugging, while another handles the main streaming process.
+### Builder API
 
-### Switches
-Processors that can move data between pipelines are referred to as **switches**. 
-These components are essential for scaling systems to support multi-user streaming or more complex scenarios involving multiple frame data sources and sinks. 
+```rust
+Pipeline::new()
+    .link(component_a)
+    .link(component_b)
+    .tag("main")
+    .run()
+```
+
+Or, for a single-component pipeline:
+
+```rust
+Pipeline::singleton(component)
+```
+
+Calling `.run()` automatically creates the channels between adjacent components and spawns each component as a Tokio task. It returns `Vec<JoinHandle<()>>`.
+
+### Feedable pipelines
+
+Mark a pipeline as `.feedable()` to allow external code to inject DTOs into its head:
+
+```rust
+let mut pipeline = Pipeline::new().link(component).feedable();
+let feeder = pipeline.get_feeder();
+feeder.feed(my_dto);
+```
+
+### Multi-pipeline architectures
+
+Complex systems use multiple pipelines connected by switches. For example, a main streaming pipeline and a separate error-handling pipeline, linked by an `OnErrorSwitch`. See the [Pipelines & Lifecycle](./pipeline-lifecycle.md) page for the full API and lifecycle details.
+
+---
+
+## Switches
+
+**Switches** are processors that move DTOs between pipelines. Instead of returning `Some(dto)` to continue in the current pipeline, they send the DTO to a different pipeline and return `None`.
+
+The framework provides several switch types:
+
+| Switch | Behavior |
+|---|---|
+| `Switch` | Unconditionally redirects the DTO to another pipeline |
+| `CloneSwitch` | Clones the DTO, sends the clone to another pipeline, passes the original forward |
+| `OnErrorSwitch` | Redirects the DTO to another pipeline if it carries a matching error |
+| `PoolingSwitch` | Picks a random destination from a pool and stamps the DTO with the pool key |
+| `DepoolingSwitch` | Routes the DTO to the destination matching its pool key |
+
+See the [Processors](./processors.md) page for constructor signatures and usage details.
