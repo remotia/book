@@ -12,11 +12,11 @@ The framework uses a **Data Transfer Object (DTO)** to handle the transfer of in
 This object is referred to as Frame DTO or simply DTO.
 It usually contains pointers to data buffers and statistical values related to the frame(s) being processed. 
 
-The structure of the DTO is intentionally kept generic
+The structure of the DTO is intentionally kept generic.
 Each application should define its own DTO types adapted to its specific use cases.
 A DTO implements the necessary interfaces [traits](https://doc.rust-lang.org/book/ch10-02-traits.html) to interact with processors. 
 In most cases, the DTOs implement interfaces that are part of the standard library
-This paradigm ensures that data are decoupled from the the logic code, which remains reusable.
+This paradigm ensures that data are decoupled from the logic code, which remains reusable.
 For more complex scenarios, custom modules can define their own interfaces that the DTO must implement if the module is used in the pipeline. 
 
 ## Processors

@@ -9,6 +9,8 @@ default-features = false # It is recommended to disable all features by default 
 features = ["buffers", "profilation", "transmission"]
 ```
 
+> **Note:** The feature flag is named `profilation` for historical reasons, but it enables profiling utilities.
+
 ## Features
 Each feature enables a specific part of the framework, such that only adopted components can be kept to speed up compilation. Check the [Cargo.toml](https://github.com/remotia/remotia/blob/main/Cargo.toml) for the list of available features and which crates they enable.
 
