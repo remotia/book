@@ -1,24 +1,15 @@
 # Quickstart
 
-## Add the dependency
+This example demonstrates a two-pipeline architecture: a **main** pipeline processes frames by tagging each with a unique `frame_id`, encoding them with a dummy codec, and checking quality against a PSNR threshold, while an **error** pipeline catches and logs any frames that fall below the threshold.
 
-```toml
-[dependencies.remotia]
-version = "0.1.0" # Check crates.io for the latest version
-default-features = false
-features = []     # Enable only what you need (see Crate map)
-```
+### 1. Data Transfer Object (DTO)
 
-> **Note:** The feature flag is named `profilation` for historical reasons, but it enables profiling utilities.
-
-## A minimal pipeline
-
-This example demonstrates a two-pipeline architecture where a **main** pipeline processes frames by tagging each with a unique frame_id, encoding them with a dummy codec, and checking quality against a PSNR threshold, while an **error** pipeline catches and logs any frames that fall below the threshold. The DTO carries a frame_id, a psnr score, an encoded_data buffer, and an optional error field, flowing through a tick stage, a tagging stage, an encoding stage, a quality gate, and an error switch before being routed to either pipeline.
+The DTO carries a `frame_id`, a `psnr` score, an `encoded_data` buffer, and an optional `error` field. It implements `FrameError<String>` so pipeline stages can report errors on it.
 
 ```rust
 use remotia::{
     traits::{FrameError, FrameProcessor},
-    pipeline::{Pipeline, PipelineRegistry, Component},
+    pipeline::{Pipeline, component::Component, registry::PipelineRegistry},
     processors::{
         ticker::Ticker,
         error_switch::OnErrorSwitch,
@@ -26,8 +17,6 @@ use remotia::{
 };
 use async_trait::async_trait;
 use rand::Rng;
-
-// ── 1. DTO ── the data structure that flows through every pipeline stage
 
 #[derive(Debug, Default)]
 struct MyDto {
@@ -41,10 +30,15 @@ impl FrameError<String> for MyDto {
     fn report_error(&mut self, error: String) { self.error = Some(error); }
     fn get_error(&self) -> Option<String> { self.error.clone() }
 }
+```
 
-// ── 2. Processors ──
+### 2. Pipeline Processors
 
-/// Assigns a unique frame_id on each call.
+Each processor implements `FrameProcessor<MyDto>` and transforms or inspects the DTO as it moves through the pipeline.
+
+**FrameTagger** — assigns a unique frame ID on each invocation:
+
+```rust
 struct FrameTagger {
     current_frame_id: u64,
 }
@@ -57,8 +51,11 @@ impl FrameProcessor<MyDto> for FrameTagger {
         Some(dto)
     }
 }
+```
 
-/// Populates the DTO with random psnr and encoded_data values.
+**DummyCodec** — populates the DTO with random PSNR and encoded data:
+
+```rust
 struct DummyCodec;
 
 #[async_trait]
@@ -67,12 +64,15 @@ impl FrameProcessor<MyDto> for DummyCodec {
         let mut rng = rand::thread_rng();
         dto.psnr = rng.gen_range(20.0..50.0);
         let len = rng.gen_range(100..1000);
-        dto.encoded_data = (0..len).map(|_| rng.gen()).collect();
+        dto.encoded_data = (0..len).map(|_| rng.r#gen()).collect();
         Some(dto)
     }
 }
+```
 
-/// Reports an error when psnr is below the configured threshold.
+**QualityGate** — checks whether the PSNR is below a threshold and reports an error if so:
+
+```rust
 struct QualityGate {
     threshold: f64,
 }
@@ -95,8 +95,11 @@ impl FrameProcessor<MyDto> for QualityGate {
         Some(dto)
     }
 }
+```
 
-/// Logs the error on a frame and discards it.
+**ErrorLogger** — logs any error on a frame and discards it:
+
+```rust
 struct ErrorLogger;
 
 #[async_trait]
@@ -108,42 +111,42 @@ impl FrameProcessor<MyDto> for ErrorLogger {
         None
     }
 }
+```
 
-// ── 3. Assembly ── register error pipeline, then build main pipeline
-//    with tick → increment → encode → quality gate → error switch stages
+### 3. Pipeline Assembly
 
+Register the error pipeline first, making it **feedable** so `OnErrorSwitch` can push frames into it. Then build the main pipeline with a tick rate-limiter, frame tagger, dummy codec, quality gate, and error switch. Finally register and run everything:
+
+```rust
 #[tokio::main]
 async fn main() {
     let mut registry = PipelineRegistry::<MyDto, &str>::new();
 
-    // Register the error pipeline first so we can feed it via OnErrorSwitch
     let error_pipeline = Pipeline::new()
         .link(Component::singleton(ErrorLogger))
+        .feedable()
         .tag("error");
     registry.register("error", error_pipeline);
 
-    // Build an OnErrorSwitch that redirects to the error pipeline
     let error_switch = {
         let error_pipe = registry.get_mut(&"error");
         OnErrorSwitch::new(error_pipe)
     };
 
-    // Build the main pipeline
     let main_pipeline = Pipeline::new()
         .link(
             Component::new()
-                .append(Ticker::new(100))         // tick every 100ms
+                .append(Ticker::new(100))
                 .append(FrameTagger { current_frame_id: 0 })
                 .append(DummyCodec)
                 .append(QualityGate { threshold: 30.0 })
-                .append(error_switch)              // routes only frames with errors
+                .append(error_switch)
                 .tag("main-step")
         )
         .tag("main");
 
     registry.register("main", main_pipeline);
 
-    // Run all pipelines (blocks until all tasks complete)
     registry.run().await;
 }
 ```
