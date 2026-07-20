@@ -2,6 +2,8 @@
 
 This example demonstrates a two-pipeline architecture: a **main** pipeline processes frames by tagging each with a unique `frame_id`, encoding them with a dummy codec, and checking quality against a PSNR threshold, while an **error** pipeline catches and logs any frames that fall below the threshold.
 
+Full source: [code-samples/examples/quickstart.rs](https://github.com/remotia/book/blob/main/code-samples/examples/quickstart.rs)
+
 ### 1. Data Transfer Object (DTO)
 
 The DTO carries a `frame_id`, a `psnr` score, an `encoded_data` buffer, and an optional `error` field. It implements `FrameError<String>` so pipeline stages can report errors on it.
@@ -157,8 +159,10 @@ async fn main() {
 2. `FrameTagger` increments `frame_id` by 1 each tick.
 3. `DummyCodec` fills `psnr` with a random value between 20.0 and 50.0 and `encoded_data` with random bytes (100–1000 bytes).
 4. `QualityGate` checks whether `psnr` is below the threshold (30.0); if so, it reports an error on the DTO. It always passes the frame forward.
-5. `OnErrorSwitch` inspects the DTO's error field: if an error is present it feeds the frame into the error pipeline; otherwise the frame is consumed in the main pipeline.
-6. The error pipeline logs the failure with `ErrorLogger` and discards the frame.
+5. `OnErrorSwitch` inspects the DTO's error field and splits execution into two branches:
+   - **Main branch** — no error is present: the frame is consumed within the main pipeline.
+   - **Error branch** — an error is present: the frame is forwarded to the registered error pipeline.
+6. In the error pipeline, `ErrorLogger` prints the failure details and the frame is discarded (returns `None`).
 
 ## Next steps
 
