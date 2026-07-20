@@ -4,12 +4,12 @@ Remotia is built around four abstractions that compose into streaming pipelines.
 
 ```
 Pipeline
- ┌──────────────────────────┐       ┌──────────────────────────┐
- │ Component A               │       │ Component B               │
- │  ┌──────────┐ ┌─────────┐│  ch   │  ┌──────────┐ ┌─────────┐│
+ ┌─────────────────────────────┐       ┌─────────────────────────────┐
+ │ Component A                 │       │ Component B                 │
+ │  ┌───────────┐ ┌───────────┐│  ch   │  ┌───────────┐ ┌───────────┐│
  │  │Processor 1│→│Processor 2││──────▶│  │Processor 3│→│Processor 4││
- │  └──────────┘ └─────────┘│       │  └──────────┘ └─────────┘│
- └──────────────────────────┘       └──────────────────────────┘
+ │  └───────────┘ └───────────┘│       │  └───────────┘ └───────────┘│
+ └─────────────────────────────┘       └─────────────────────────────┘
 ```
 
 - A **DTO** (Data Transfer Object) carries frame data and metadata through the pipeline.
