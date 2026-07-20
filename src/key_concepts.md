@@ -21,7 +21,7 @@ Pipeline
 
 ## Data Transfer Object (DTO)
 
-At the heart of every Remotia pipeline is the Data Transfer Object (DTO) — the envelope that carries frame data and metadata between processing stages. The DTO is intentionally generic: each application defines its own struct with the fields and traits that its processors require. This decouples processors from each other — a processor only knows about the DTO's trait implementations, not its concrete layout — allowing different modules to work together without direct dependency on one another's data structures.
+At the heart of every Remotia pipeline is the Data Transfer Object (DTO) — the envelope that carries frame data and metadata between processing stages. The DTO is intentionally generic: each application defines its own struct with the fields and traits that its processors require. This decouples processors from the data they work on — a processor only knows about the DTO's trait implementations, not its concrete layout — and these abstractions are likely to be optimized at compile time. As a consequence, different modules can work together without direct dependency on one another's data structures.
 
 <img style="display:block; margin: auto" src="./figures/frame_dto.svg">
 
@@ -199,7 +199,7 @@ Complex systems use multiple pipelines connected by switches. For example, a mai
 
 ## Switches
 
-Switches are a special category of processor that redirect DTOs from one pipeline to another. Instead of returning `Some(dto)` to continue in the current pipeline, a switch sends the DTO to a different pipeline and returns `None`, signalling that the frame's processing continues elsewhere. Switches are the mechanism for building multi-pipeline architectures — they enable patterns like error handling (diverting failed frames to a logging pipeline), load balancing (distributing work across a pool of worker pipelines), and fan-out/fan-in (cloning frames for parallel side-channels such as profiling).
+Switches are a special category of processor that redirect DTOs from one pipeline to another. Instead of returning `Some(dto)` to continue in the current pipeline, a switch sends the DTO to a different pipeline and returns `None`, signalling that the frame's processing continues elsewhere. Switches are the mechanism for building multi-pipeline architectures — they enable error handling and profiling with limited impact on streaming performance, auxiliary pipelines for logging or debugging, and scaling to multi-user streaming with multiple frame data sources and sinks. The framework provides concrete switch implementations for these patterns, including load balancing via `PoolingSwitch`/`DepoolingSwitch` and cloning side-channels via `CloneSwitch`.
 
 **Switches** are processors that move DTOs between pipelines. Instead of returning `Some(dto)` to continue in the current pipeline, they send the DTO to a different pipeline and return `None`.
 
