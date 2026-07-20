@@ -1,5 +1,7 @@
 # Processors
 
+Processors are the building blocks of a Remotia pipeline. Each processor performs one atomic operation on the frame data by implementing the `FrameProcessor<F>` trait with a single `process` method. The method takes ownership of a DTO and returns `Option<F>`: `Some(dto)` passes the data forward to the next processor, while `None` signals that processing for that frame is complete — it may have been redirected to another pipeline, stored, or dropped. This simple contract makes it easy to add, remove, or reorder processing steps without affecting the rest of the system. See the [processors module documentation](https://docs.rs/remotia/latest/remotia/processors/index.html) for the full API reference.
+
 Processors implement the `FrameProcessor<F>` trait and perform a single atomic operation on the DTO. This page catalogs every built-in processor in `remotia-core`.
 
 ```rust
