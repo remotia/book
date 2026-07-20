@@ -1,5 +1,7 @@
 # Processors
 
+Processors are the building blocks of a Remotia pipeline. Each processor performs one atomic operation on the frame data by implementing the `FrameProcessor<F>` trait with a single `process` method. The method takes ownership of a DTO and returns `Option<F>`: `Some(dto)` passes the data forward to the next processor, while `None` signals that processing for that frame is complete — it may have been redirected to another pipeline, stored, or dropped. This simple contract makes it easy to add, remove, or reorder processing steps without affecting the rest of the system. See the [processors module documentation](https://docs.rs/remotia/latest/remotia/processors/index.html) for the full API reference.
+
 Processors implement the `FrameProcessor<F>` trait and perform a single atomic operation on the DTO. This page catalogs every built-in processor in `remotia-core`.
 
 ```rust
@@ -187,3 +189,78 @@ let seq = Sequential::new()
 ```
 
 **Use when:** grouping processors that must run in the same async task — e.g. a tick-then-capture pattern, or a sequence of buffer operations that should not be split across component boundaries.
+
+---
+
+## Profilation
+
+The profilation utilities (behind the `profilation` feature flag, in the separate `remotia-profilation-utils` crate) collect execution statistics during frame processing. Remotia does not force a specific method to collect statistics, but provides profilation processors that are injected into components at the points where the phase to profile begins or ends, so that collection points are equal between executions and reproducibility is strengthened.
+
+### Timestamp pairs
+
+A `TimestampAdder("encoding_start")` processor at the start of the phase saves the current time into a DTO field. A time-diff processor at the end writes the elapsed time into another DTO field:
+
+```rust
+use remotia::profilation::{TimestampAdder, TimestampDiffCalculator};
+
+Pipeline::new()
+    .link(
+        Component::new()
+            .append(TimestampAdder("encoding_start"))
+            .append(AV1Preprocessor())
+            .append(AV1Compressor())
+            .append(AV1Serializer())
+            .append(TimestampDiffCalculator("encoding_start", "encoding_time"))
+    )
+    .run();
+```
+
+The same measurement works when the phase is split across multiple components, making it simple to verify whether asynchronous preprocessing improves performance:
+
+```rust
+Pipeline::new()
+    .link(
+        Component::new()
+            .append(TimestampAdder("encoding_start"))
+            .append(AV1Preprocessor())
+    )
+    .link(
+        Component::new()
+            .append(AV1Compressor())
+            .append(AV1Serializer())
+            .append(TimestampDiffCalculator("encoding_start", "encoding_time"))
+    )
+    .run();
+```
+
+### ProfiledSequential
+
+When only the overall processing time matters and the computation runs in a single thread, `ProfiledSequential` wraps a sequence of processors and measures their total execution time:
+
+```rust
+use remotia::profilation::ProfiledSequential;
+
+Component::new()
+    .append(ProfiledSequential("encoding_time"))
+    .append(AV1Preprocessor())
+    .append(AV1Compressor())
+    .append(AV1Serializer());
+```
+
+It can later be replaced by a plain [`Sequential`](#sequential) (which runs the same sequence without measuring) with minimal edits.
+
+### Frame droppers and loggers
+
+The profilation feature also includes utilities for dropping stale frames and logging statistics:
+
+| Type | Purpose |
+|---|---|
+| `ThresholdBasedFrameDropper` | Drops frames exceeding a configurable delay threshold |
+| `TimestampBasedFrameDropper` | Drops frames based on timestamp comparisons |
+| `ConsoleAverageStatsLogger` | Logs average statistics to the console at intervals |
+| `CSVFrameDataSerializer` | Serializes frame data to CSV for post-hoc analysis |
+| `ConsoleDropReasonLogger` | Logs the reason for each dropped frame |
+
+The delay threshold used by frame droppers is grounded in the paper's experimental setup, where a threshold on delay is added before rendering on the client screen to drop stale frames.
+
+Browse the [API documentation](https://docs.rs/remotia/latest/remotia/) for the full profilation module reference.

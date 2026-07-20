@@ -5,6 +5,7 @@
 - [Key concepts](./key_concepts.md)
 - [Processors](./processors.md)
 - [Pipelines & lifecycle](./pipeline-lifecycle.md)
+- [Buffer pools](./buffer-pools.md)
 - [Crate map](./crate-map.md)
 - [Examples](./examples/main.md)
   - [Screen snapper](./examples/screen_snapper.md)
