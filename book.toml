@@ -4,9 +4,3 @@ language = "en"
 multilingual = false
 src = "src"
 title = "The Remotia book"
-
-[output.html]
-git-repository-url = "https://github.com/remotia/book"
-
-[params]
-repo-url = "https://github.com/remotia/book"

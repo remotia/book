@@ -1,6 +1,6 @@
 # Multi-pipeline with switches — Connecting pipelines
 
-This example demonstrates one of remotia's key mechanisms: multiple pipelines connected by switch processors, which route frames between them. A main processing pipeline routes frames to different downstream pipelines based on conditions.
+This example demonstrates the core differentiator of remotia: multiple pipelines connected by switches. A main processing pipeline routes frames to different downstream pipelines based on conditions.
 
 Full source: [GitHub — examples](https://github.com/remotia/examples)
 

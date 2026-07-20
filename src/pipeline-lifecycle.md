@@ -1,7 +1,5 @@
 # Pipelines & lifecycle
 
-A pipeline is a directed chain of components that process frames sequentially. Each component runs concurrently as its own async task, while processors within a component execute in order. Pipelines can be connected via switches — special processors that route DTOs from one pipeline to another — enabling complex architectures such as a main streaming pipeline with a separate error-handling pipeline and a profiling side-channel. The framework manages channel wiring and task spawning automatically: calling `.run()` creates unbounded `mpsc` channels between adjacent components, spawns each as a Tokio task, and returns join handles for lifecycle management. See the [pipeline module documentation](https://docs.rs/remotia/latest/remotia/pipeline/index.html) for the full API reference.
-
 This page covers the full `Pipeline`, `PipelineFeeder`, `PipelineRegistry`, and `PipelineHandle` APIs, plus the shutdown/drain lifecycle.
 
 ---
@@ -75,7 +73,7 @@ handle.request_shutdown();
 
 When `request_shutdown()` is called, the shared `AtomicBool` is set. Every component in the pipeline checks this signal each iteration and exits when it becomes `true`.
 
-`PipelineHandle` is `Clone` — multiple callers can hold a handle to the same pipeline. See the [pipeline module documentation](https://docs.rs/remotia/latest/remotia/pipeline/index.html) for the full PipelineHandle API reference.
+`PipelineHandle` is `Clone` — multiple callers can hold a handle to the same pipeline.
 
 ---
 
@@ -104,8 +102,6 @@ registry.run().await; // runs all pipelines, blocks until all finish
 | `.get(&id)` / `.get_mut(&mut id)` | Access a pipeline by key |
 | `.lazy_handle(id)` | Get a `PipelineHandle` for a pipeline (works even before `.run()`) |
 | `.run()` | Bind and spawn all pipelines, await all tasks |
-
-See the [pipeline registry module documentation](https://docs.rs/remotia/latest/remotia/pipeline/registry/index.html) for the full PipelineRegistry API reference.
 
 ### Connecting pipelines with switches
 

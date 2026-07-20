@@ -12,7 +12,7 @@ Identical runtime layout — two components in one pipeline. The difference is i
 Component 1: Capture                          Component 2: Save
 ┌──────────────────────────────────┐          ┌─────────────────┐
 │ Ticker → BufferAllocator →       │  channel │ PNGBufferSaver  │
-│ [xcap OR wayshot] Capturer       │─────────▶│                 │
+│ [xcap OR wayshot] Capturer      │─────────▶│                 │
 └──────────────────────────────────┘          └─────────────────┘
 ```
 
